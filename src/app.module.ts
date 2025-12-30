@@ -1,8 +1,7 @@
 import { Module } from '@nestjs/common';
+import { GateWayModule } from './websocket/websocket.module';
 
 @Module({
-  imports: [],
-  controllers:[],
-  providers:[],
+  imports: [GateWayModule],
 })
 export class AppModule {}
