@@ -9,7 +9,7 @@
       body {
         font-family: Arial, sans-serif;
         padding: 20px;
-        max-width: 600px;
+        max-width: 700px;
         margin: 0 auto;
       }
       #messages {
@@ -18,54 +18,116 @@
         height: 200px;
         overflow-y: auto;
         margin: 10px 0;
+        background: #f9f9f9;
       }
       input,
-      button {
+      button,
+      select {
         padding: 10px;
-        margin: 5px 0;
+        margin: 5px;
       }
       input {
-        width: 70%;
+        width: 60%;
       }
       button {
         cursor: pointer;
       }
       .connected {
         color: green;
+        font-weight: bold;
       }
       .disconnected {
         color: red;
       }
+      .section {
+        border: 1px solid #ddd;
+        padding: 15px;
+        margin: 15px 0;
+        border-radius: 8px;
+      }
+      .section h3 {
+        margin-top: 0;
+      }
+      .area-tag {
+        display: inline-block;
+        background: #007bff;
+        color: white;
+        padding: 3px 8px;
+        border-radius: 4px;
+        margin: 2px;
+        font-size: 12px;
+      }
+      #currentAreas {
+        margin: 10px 0;
+      }
     </style>
   </head>
   <body>
-    <h1>Socket.IO Test Client</h1>
+    <h1>🔌 Socket.IO Test Client</h1>
     <p>Estado: <span id="status" class="disconnected">Desconectado</span></p>
+    <p>Áreas actuales: <span id="currentAreas">Ninguna</span></p>
 
-    <div>
+    <button onclick="connect()">Conectar</button>
+    <button onclick="disconnect()">Desconectar</button>
+
+    <!-- Sección de Áreas -->
+    <div class="section">
+      <h3>🏢 Gestión de Áreas</h3>
+      <select id="areaSelect">
+        <option value="ventas">Ventas</option>
+        <option value="soporte">Soporte</option>
+        <option value="desarrollo">Desarrollo</option>
+        <option value="rrhh">Recursos Humanos</option>
+        <option value="general">General</option>
+      </select>
+      <button onclick="joinArea()">Unirse al Área</button>
+      <button onclick="leaveArea()">Salir del Área</button>
+    </div>
+
+    <!-- Sección de Mensajes -->
+    <div class="section">
+      <h3>💬 Enviar Mensaje</h3>
       <input
         type="text"
         id="messageInput"
         placeholder="Escribe un mensaje..."
       />
-      <button onclick="sendMessage()">Enviar</button>
+      <br />
+      <button onclick="sendMessage()">Enviar a Todos</button>
+      <button onclick="sendMessageToArea()">Enviar solo al Área</button>
     </div>
 
-    <h3>Mensajes:</h3>
+    <h3>📨 Mensajes:</h3>
     <div id="messages"></div>
-
-    <button onclick="connect()">Conectar</button>
-    <button onclick="disconnect()">Desconectar</button>
 
     <script>
       let socket;
+      let myAreas = new Set();
       const messagesDiv = document.getElementById('messages');
       const statusSpan = document.getElementById('status');
+      const currentAreasSpan = document.getElementById('currentAreas');
 
-      function log(message) {
+      function log(message, type = 'info') {
         const time = new Date().toLocaleTimeString();
-        messagesDiv.innerHTML += `<p>[${time}] ${message}</p>`;
+        const colors = {
+          info: '#333',
+          sent: '#007bff',
+          received: '#28a745',
+          area: '#6f42c1',
+          error: '#dc3545',
+        };
+        messagesDiv.innerHTML += `<p style="color: ${colors[type]}">[${time}] ${message}</p>`;
         messagesDiv.scrollTop = messagesDiv.scrollHeight;
+      }
+
+      function updateAreasDisplay() {
+        if (myAreas.size === 0) {
+          currentAreasSpan.innerHTML = 'Ninguna';
+        } else {
+          currentAreasSpan.innerHTML = Array.from(myAreas)
+            .map((area) => `<span class="area-tag">${area}</span>`)
+            .join(' ');
+        }
       }
 
       function connect() {
@@ -80,11 +142,24 @@
         socket.on('disconnect', () => {
           statusSpan.textContent = 'Desconectado';
           statusSpan.className = 'disconnected';
+          myAreas.clear();
+          updateAreasDisplay();
           log('❌ Desconectado del servidor');
         });
 
-        socket.on('message', (data) => {
-          log('📩 Respuesta del servidor: ' + JSON.stringify(data));
+        // Escuchar mensajes del servidor
+        socket.on('mensajeServer', (data) => {
+          log('📩 Mensaje recibido: ' + JSON.stringify(data), 'received');
+        });
+
+        // Confirmación de unirse a área
+        socket.on('joinedArea', (message) => {
+          log('🏢 ' + message, 'area');
+        });
+
+        // Confirmación de salir del área
+        socket.on('leftArea', (message) => {
+          log('🚪 ' + message, 'area');
         });
       }
 
@@ -94,15 +169,45 @@
         }
       }
 
+      function joinArea() {
+        const area = document.getElementById('areaSelect').value;
+        if (socket && area) {
+          socket.emit('joinArea', area);
+          myAreas.add(area);
+          updateAreasDisplay();
+          log(`➡️ Solicitando unirse al área: ${area}`, 'area');
+        }
+      }
+
+      function leaveArea() {
+        const area = document.getElementById('areaSelect').value;
+        if (socket && area) {
+          socket.emit('leaveArea', area);
+          myAreas.delete(area);
+          updateAreasDisplay();
+          log(`⬅️ Saliendo del área: ${area}`, 'area');
+        }
+      }
+
       function sendMessage() {
         const input = document.getElementById('messageInput');
         const message = input.value;
 
         if (socket && message) {
-          log('📤 Enviando: ' + message);
-          socket.emit('message', message, (response) => {
-            log('✅ Acknowledgment: ' + JSON.stringify(response));
-          });
+          log('📤 Enviando a todos: ' + message, 'sent');
+          socket.emit('message', message);
+          input.value = '';
+        }
+      }
+
+      function sendMessageToArea() {
+        const input = document.getElementById('messageInput');
+        const message = input.value;
+        const area = document.getElementById('areaSelect').value;
+
+        if (socket && message && area) {
+          log(`📤 Enviando al área "${area}": ${message}`, 'sent');
+          socket.emit('messageToArea', { area: area, message: message });
           input.value = '';
         }
       }
